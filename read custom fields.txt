@@ -1,0 +1,73 @@
+
+
+            /***********read custom fields tested in - form1.cs - WialonGetAvailableUnits***********/
+            urlGetAUs =
+               DDDReader.Program.mainForm.wialonurlfix + "/ajax.html?svc=core/update_data_flags&sid=" + DDDReader.Program.mainForm.wialonLogin.eID +
+               "&params={" +
+                   "\"spec\":[" +
+                   "{" +
+                       "\"type\":\"type\"," +
+                       "\"data\":\"avl_unit\"," +//use avl_unit
+                       "\"flags\":8," +
+                /* 1 - get common information(NAMEs) ; 
+                 * 256-phone+unique ID ; 
+                 * 8192 - current value for km/hours/KB;
+                 * 131072 - trip detection details
+                 * 8- custom fields
+                 */
+                       "\"mode\":0" +                /* set flags */
+                   "}" +
+                   "]" +
+               "}";
+            //units custom fields
+             wc = new WebClient();
+            wc.Encoding = Encoding.UTF8;
+             result = (wc.DownloadString(urlGetAUs));
+            
+            List<reportRow> data1 = ser.Deserialize<List<reportRow>>(result);
+            foreach (reportRow temprow in data1) {
+                Dictionary<string, object> rowd = (Dictionary<string, object>)temprow.d;                
+                //if (string.Compare(temprow.i, "19414015" )==0){
+                
+                    foreach (KeyValuePair<string, object> paird in rowd)
+                    {                        
+                        if ((string.Compare(paird.Key, "flds") == 0))
+                        {
+                            Dictionary<string, object> rowflds = (Dictionary<string, object>)paird.Value;
+                            if (rowflds.Count > 2)//Gruppe
+                            {
+                                foreach (KeyValuePair<string, object> fldsobj in rowflds)
+                                {//1 , 2 , 3...
+                                    customFld tmpp = new customFld();
+
+                                    foreach (KeyValuePair<string, object> fldsobjsub in (Dictionary<string, object>)fldsobj.Value)
+                                    {
+                                        if (string.Compare(fldsobjsub.Key, "v") == 0)
+                                        {
+                                            tmpp.v = fldsobjsub.Value.ToString();
+                                        }
+                                                                                
+                                        if (string.Compare(fldsobjsub.Key, "n") == 0)
+                                        {
+                                            tmpp.n =fldsobjsub.Value.ToString() ;
+                                        }
+                                    }
+
+                                   
+                                    //customFld tmpp = (customFld)fldsobj.Value;
+                                    //todo - filter custom field by name, eg "Gruppe"
+                                    //todo - attach custom fields to current vehicle
+                                    //if (string.Compare(tmpp.n, "GRUPPE")==0)
+                                        //MessageBox.Show("GRUPPE "+tmpp.n + " : "+tmpp.v);
+                                }
+                                
+                                string tmp = paird.Value.ToString();
+                                string test1 = "";
+                            }
+                        }                        
+                    }
+                //}
+            }
+            
+            string test = "";
+            /**********end read custom fields*************************/
