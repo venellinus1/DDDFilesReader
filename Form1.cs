@@ -12,6 +12,7 @@ Changes include :
 
 using System;
 using System.Collections.Generic;
+using System.Collections;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
@@ -73,6 +74,9 @@ namespace DDDReader
         public bool readyForNextFile;
         public List<String> dddFileNames = new List<string>();
         public int fileNameCounter;
+        //wialon subaccounts dict - key=name, value = wialon resource id
+        Dictionary<string, string> subAccounts = new Dictionary<string, string>();
+        Dictionary<string, List<driverInfo>> subAccountsDrivers = new Dictionary<string, List<driverInfo>>();
 
         public void clearDrivers() {
             driversActivity.Clear();
@@ -162,12 +166,15 @@ namespace DDDReader
             wialonLogin = new Login();
             wialonLogin.chkUseToken = chkUseToken.Checked;
             wialonLogin.txtToken = txtLoginToken.Text;
-            wialonLogin.wialonuser = "";
-            wialonLogin.wialonpass = "";
+            wialonLogin.wialonuser = "Universaltransporte";
+            wialonLogin.wialonpass = "michels";
             wialonLogin.DoLoginToken();
             //DDDReader.Program.mainForm.WialonGetAvailableUnits(this.eID); 190728 - moved from wialonclasses - dologintoken in here
             WialonGetAvailableUnits(wialonLogin.eID);
-            
+
+            readSubAccountsFromWialon(wialonLogin.eID);
+
+            getSubAccountsDrivers(wialonLogin.eID);
         }
 
         private void button3_Click(object sender, EventArgs e)
@@ -249,11 +256,11 @@ namespace DDDReader
                        "\"type\":\"type\"," +
                        "\"data\":\"avl_unit\"," +//use avl_unit
                        "\"flags\":129," +//190729 modified the flag from 1 to 9 (8 + 1), flag 8 provides data for custom fields
-                /* 1 - get common information(NAMEs) ; 
-                 * 256-phone+unique ID ; 
-                 * 8192 - current value for km/hours/KB;
-                 * 131072 - trip detection details
-                 */
+                        /* 1 - get common information(NAMEs) ; 
+                         * 256-phone+unique ID ; 
+                         * 8192 - current value for km/hours/KB;
+                         * 131072 - trip detection details
+                         */
                        "\"mode\":0" +                /* set flags */
                    "}" +
                    "]" +
@@ -607,5 +614,209 @@ namespace DDDReader
 
         }
 
+        
+        private void button7_Click(object sender, EventArgs e)
+        {
+            treeViewSubAccounts.Nodes.Clear();            
+        }
+                
+        
+        /*
+         fill in subaccounts with data from wialon - to use later on with 
+         */
+        private void readSubAccountsFromWialon(string eID) {
+            //this reads all subusers with their itemsIDs
+            //http://hst-api.wialon.com/wialon/ajax.html?svc=core/search_items&params={"spec":{"itemsType":"user",	"propName":"sys_id", "propValueMask":"*", "sortType":"sys_id", "propType":"property",  "or_logic":false },"force":0, "flags":1, "from":0, "to":0}&sid=03a6c1c6c50c708689336528be7cb509
+            
+            WebClient wcgr = new WebClient();
+            wcgr.Encoding = Encoding.UTF8;
+            string urlGetAUs =
+                wialonurlfix + "ajax.html?svc=core/search_items&sid=" + eID +
+                    "&params={" +
+                        "\"spec\"" +
+                        ":{" +
+                //"\"itemsType\":\"user\"," +
+                            "\"itemsType\":\"avl_resource\"," +
+                            "\"propName\":\"sys_id\"," +
+                            "\"propValueMask\":\"*\"," +
+                            "\"sortType\":\"sys_id\"," +
+                            "\"propType\":\"property\"," +
+                            "\"or_logic\":false" +
+                        "}," +
+                        "\"force\":0," +
+                        "\"flags\":1," +
+                        "\"from\":0," +
+                        "\"to\":0" +
+                    "}";
+            //textBox4.Text += urlGetAUs + "\r\n";
+
+            string resultgr = (wcgr.DownloadString(urlGetAUs));
+
+            JavaScriptSerializer ser1 = new JavaScriptSerializer();
+            //Object[] items1 = ser1.Deserialize<Object[]>(resultgr);
+            Dictionary<string, object> items1 = ser1.Deserialize<Dictionary<string, object>>(resultgr);
+
+            foreach (KeyValuePair<string, object> pair in items1)
+            {
+                if (pair.Key == "items")
+                {
+                    ArrayList geoin1 = (ArrayList)pair.Value;
+
+                    foreach (Dictionary<string, object> obj in geoin1)
+                    {
+                        userAccData account = new userAccData(); int accountReady = 0;
+                        foreach (KeyValuePair<string, object> pair2 in obj)
+                        {
+                            if (pair2.Key == "nm")
+                            {
+                                //MessageBox.Show(pair2.Value.ToString());
+                                account.nm = pair2.Value.ToString();
+                                accountReady++;
+                            }
+                            if (pair2.Key == "id")
+                            {
+                                //MessageBox.Show(pair2.Value.ToString());
+                                account.id = pair2.Value.ToString();
+                                accountReady++;
+                            }
+                            if (accountReady == 2)
+                            {                                
+                                subAccounts.Add(account.nm, account.id);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }//end for
+
+            /*foreach (KeyValuePair<string, string> acc in subAccounts)
+            {
+                MessageBox.Show(acc.Key + " : "+acc.Value);
+            }*/
+            //UTLPB
+
+            //MessageBox.Show(getSubAccountIDByKey("UTLPB"));
+            //flag 256 extracts drivers 190730
+            //http://hst-api.wialon.com/wialon//ajax.html?svc=core/update_data_flags&sid=05d97c8174dfb074da0243a4c6cc3b06&params={%22spec%22:[{%22type%22:%22type%22,%22data%22:%22avl_resource%22,%22flags%22:256,%22mode%22:0}]}
+            /*
+             [{"i":259250,"d":{},"f":256},{"i":12052012,"d":{"drvrs":{},"drvrsmax":-1},"f":256},{"i":15021855,"d":{"drvrs":{
+             * "1":{"id":1,"n":"Grzegorz Werra","c":"1880328032510000","jp":{},"ej":{},"pwd":"","ds":"1880328032510000","p":"","r":0,"f":5,"ck":0,"ct":1486580765,"mt":1486580765,"bu":0,"pu":0,"bt":0,"bs":0,"pos":{"y":0,"x":0}},
+             * "2":{"id":2,"n":"Klaus 
+             */
+       
+            
+        }
+        private string getSubAccountIDByKey(string key){
+            string result;
+            if (subAccounts.TryGetValue(key, out result)) { return result; }
+            else return result;
+        }
+        private List<driverInfo> getSubAccountDriversByKey(string key)
+        {
+            List<driverInfo> result;
+            if (subAccountsDrivers.TryGetValue(key, out result)) { return result; }
+            else return result;
+        }
+
+        private void getSubAccountsDrivers(string eID) {
+            WebClient wcgr = new WebClient();
+            wcgr.Encoding = Encoding.UTF8;
+            string urlGetAUs =
+               wialonurlfix + "/ajax.html?svc=core/update_data_flags&sid=" + wialonLogin.eID +
+               "&params={" +
+                   "\"spec\":[" +
+                   "{" +
+                       "\"type\":\"type\"," +
+                       "\"data\":\"avl_resource\"," +//
+                       "\"flags\":256," +//get users with their drivers
+                       "\"mode\":0" +
+                   "}" +
+                   "]" +
+               "}";
+            //textBox4.Text += urlGetAUs + "\r\n";
+
+            string resultgr = (wcgr.DownloadString(urlGetAUs));
+
+            JavaScriptSerializer ser1 = new JavaScriptSerializer();
+
+            drivers[] items1 = ser1.Deserialize<drivers[]>(resultgr);
+            
+            //on start init memory object with all drivers assigned to a subaccount
+            //in subaccounts are stored pairs of ids/subaccount names
+            //when iterating ddd files : 
+            //get vehicle drivergroup - convert it to id - look up the drivers for that id in mem object and decide if driver exists or not in the drivergroup specified in vehicle
+            foreach (drivers subacc in items1)
+            {
+                List<driverInfo> drvList = new List<driverInfo>();
+                foreach (KeyValuePair<string, object> pair in (Dictionary<string, object>)subacc.d)
+                {                    
+                    if (pair.Key == "drvrs")
+                    {
+                        foreach (KeyValuePair<string, object> pair2 in (Dictionary<string, object>)pair.Value)
+                        {
+                            KeyValuePair<string, object> drvInfo = pair2;
+                            int accountReady = 0; driverInfo drvDetails = new driverInfo(); 
+                            foreach (KeyValuePair<string, object> pair3 in (Dictionary<string, object>)drvInfo.Value)
+                            {                                                                                               
+                                //foreach (KeyValuePair<string, object> pair4 in (Dictionary<string, object>)pair3.Value)
+                                {
+                                    if (pair3.Key == "n")
+                                    {
+                                        drvDetails.name = pair3.Value.ToString();
+                                        accountReady++;
+                                    }
+                                    if (pair3.Key == "c")
+                                    {
+                                        drvDetails.cardid = pair3.Value.ToString();
+                                        accountReady++;
+                                    }
+                                    if (accountReady == 2)
+                                    {                                       
+                                        drvList.Add(drvDetails);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }//end for drivers
+                subAccountsDrivers.Add(subacc.i, drvList); 
+            }
+            
+            //0000000000VNF002
+            /*foreach (KeyValuePair<string, List<driverInfo>> subaccount in (Dictionary<string, List<driverInfo>>)subAccountsDrivers)
+            {
+                foreach (driverInfo drv in (List<driverInfo>)subaccount.Value)
+                {
+                    if (drv.cardid.Contains("0000000004L8Y001"))
+                    {
+                        string test1 = "";
+                    }
+                }               
+            }*/
+
+
+            string key = getSubAccountIDByKey("UTMBA");            
+
+            List<driverInfo> subAccountDrivers = getSubAccountDriversByKey(key);
+
+            foreach (driverInfo drv in subAccountDrivers)
+            {
+                if (drv.cardid.Contains("0000000004L8Y001"))
+                {
+                    string test1 = "";
+                }
+            }
+            
+
+            /*
+             [{\"i\":259250,\"d\":{},\"f\":256},
+             {\"i\":12052012,\"d\":{\"drvrs\":{},\"drvrsmax\":-1},\"f\":256},
+             {\"i\":15021855,\"d\":{\"drvrs\":
+             {\"1\":{\"id\":1,\"n\":\"Grzegorz Werra\",\"c\":\"1880328032510000\",\"jp\":{},\"ej\":{},\"pwd\":\"\",\"ds\":\"1880328032510000\",\"p\":\"\",\"r\":0,\"f\":5,\"ck\":0,\"ct\":1486580765,\"mt\":1486580765,\"bu\":0,\"pu\":0,\"bt\":0,\"bs\":0,\"pos\":{\"y\":0,\"x\":0}},
+              \"2\":{\"id\":2,\"n\":\"Klaus Dieter Kopske\",\"c\":\"DF00000043378001\",\"jp\":{},\"ej\":{},\"pwd\":\"\",\"ds\":\"DF00000043378001\",\"p\":\"\",\"r\":0,\"f\":5,\"ck\":0,\"ct\":1486580765,\"mt\":1486580765,\"bu\":0,\"pu\":0,\"bt\":0,\"bs\":0,\"pos\":{\"y\":0,\"x\":0}},
+              
+             */
+        }
     }
 }
